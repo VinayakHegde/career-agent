@@ -35,17 +35,29 @@ export async function runPhase1(input: Phase1Input): Promise<ApplicationPack> {
   step("Matching CV against requirements");
   pack.matchAnalysis = await analyzeMatch(cvText, pack.jobAnalysis);
 
-  if (mode === "cv-tailoring" || mode === "full") {
-    step("Analyzing skill gaps");
-    pack.gapAnalysis = await analyzeGaps(cvText, pack.jobAnalysis, pack.matchAnalysis);
+  // gap, tailoring, and interview prep all depend ONLY on the match, not on
+  // each other, so we fan them out concurrently. (Real speedup requires Ollama
+  // concurrency, i.e. OLLAMA_NUM_PARALLEL >= 2.)
+  const parallel: Array<Promise<unknown>> = [];
+  const labels: string[] = [];
 
-    step("Drafting tailored CV bullets");
-    pack.cvTailoring = await suggestCvBullets(cvText, pack.jobAnalysis, pack.matchAnalysis);
+  if (mode === "cv-tailoring" || mode === "full") {
+    labels.push("gap analysis", "CV tailoring");
+    parallel.push(
+      analyzeGaps(cvText, pack.jobAnalysis, pack.matchAnalysis).then((r) => (pack.gapAnalysis = r)),
+      suggestCvBullets(cvText, pack.jobAnalysis, pack.matchAnalysis).then((r) => (pack.cvTailoring = r)),
+    );
+  }
+  if (mode === "interview-prep" || mode === "full") {
+    labels.push("interview prep");
+    parallel.push(
+      prepInterview(cvText, pack.jobAnalysis, pack.matchAnalysis).then((r) => (pack.interviewPrep = r)),
+    );
   }
 
-  if (mode === "interview-prep" || mode === "full") {
-    step("Preparing interview questions");
-    pack.interviewPrep = await prepInterview(cvText, pack.jobAnalysis, pack.matchAnalysis);
+  if (parallel.length > 0) {
+    step(`Running in parallel: ${labels.join(", ")}`);
+    await Promise.all(parallel);
   }
 
   if (mode === "full") {

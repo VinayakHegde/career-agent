@@ -75,8 +75,12 @@ export function buildPhase5Graph() {
     .addEdge(START, "job")
     .addEdge("job", "match")
     .addEdge("match", "write")
+    // Critic and verifier both read the current draft and are independent of
+    // each other, so they fan out from the writer and run concurrently...
     .addEdge("write", "critic")
-    .addEdge("critic", "verify")
+    .addEdge("write", "verify")
+    // ...then join: review runs once both have finished.
+    .addEdge("critic", "review")
     .addEdge("verify", "review")
     .addConditionalEdges("review", afterReview, ["write", END])
     .compile();
