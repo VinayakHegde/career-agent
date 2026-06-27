@@ -81,6 +81,37 @@ Set in `.env` (see `.env.example`):
 - `OLLAMA_MODEL` — model name (default `qwen3:8b`)
 - `OLLAMA_BASE_URL` — Ollama server URL (default `http://127.0.0.1:11434`)
 - `OLLAMA_TEMPERATURE` — sampling temperature (default `0.2`)
+- `PERF` — set to `1` to log each LLM call's duration as it finishes
+
+Every run prints a performance summary (wall time, number of LLM calls, total
+in-model time, and a per-call breakdown). Set `PERF=1` for live per-call timings:
+
+```bash
+PERF=1 pnpm dev --cv ./data/cv.sample.md --job ./data/job-description.sample.md --mode full
+```
+
+### Parallel execution
+
+Some steps are independent and run concurrently:
+
+- **Phase 1:** gap analysis, CV tailoring, and interview prep all depend only on
+  the match analysis, so they fan out in parallel after it.
+- **Phase 5:** the critic and the evidence verifier both read the current draft
+  and run in parallel, joining at the supervisor's review.
+
+The remaining order is forced by data dependencies (`job_analysis → match_analysis`,
+and the synthesizer runs last). When `wall time < in-model time` in the summary,
+that gap is the parallel speedup.
+
+Real overlap requires Ollama to serve concurrent requests. If you don't see a
+speedup, start the server with a higher parallelism, e.g.:
+
+```bash
+OLLAMA_NUM_PARALLEL=3 ollama serve
+```
+
+Note the speedup is sublinear: concurrent requests share the GPU, so each
+individual call gets slower even as total wall time drops.
 
 ## Project structure
 
