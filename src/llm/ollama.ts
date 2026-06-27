@@ -47,6 +47,15 @@ function resolveTemperature(): number {
   return Number.isFinite(parsed) ? parsed : 0.2;
 }
 
+/** Optional fixed sampling seed (OLLAMA_SEED). Combined with temperature 0 this
+ * makes runs reproducible — useful for evals. Returns undefined when unset. */
+function resolveSeed(): number | undefined {
+  const raw = process.env.OLLAMA_SEED;
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) ? parsed : undefined;
+}
+
 /**
  * Build a configured ChatOllama client.
  *
@@ -54,12 +63,68 @@ function resolveTemperature(): number {
  * (JSON) outputs clean and avoids the model leaking `<think>` blocks into
  * parsed results. Callers can override any field for one-off needs.
  */
+export function resolveBaseUrl(): string {
+  return process.env.OLLAMA_BASE_URL?.trim() || DEFAULT_BASE_URL;
+}
+
 export function getChatModel(overrides: Partial<ChatOllamaInput> = {}): ChatOllama {
+  const seed = resolveSeed();
   return new ChatOllama({
     model: resolveModel(),
-    baseUrl: process.env.OLLAMA_BASE_URL?.trim() || DEFAULT_BASE_URL,
+    baseUrl: resolveBaseUrl(),
     temperature: resolveTemperature(),
+    ...(seed !== undefined ? { seed } : {}),
     think: false,
     ...overrides,
   });
+}
+
+/** Raised when Ollama is unreachable or a required model isn't pulled. */
+export class OllamaUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OllamaUnavailableError";
+  }
+}
+
+/** Every distinct model this run might use: the global default + any per-role overrides. */
+export function requiredModels(): string[] {
+  const models = new Set<string>([resolveModel()]);
+  for (const role of AGENT_ROLES) models.add(resolveModelForRole(role));
+  return [...models];
+}
+
+/** True if an installed model name satisfies a requested one (tolerating the ":latest" tag). */
+function modelMatches(installed: string, requested: string): boolean {
+  return installed === requested || installed === `${requested}:latest` || requested === `${installed}:latest`;
+}
+
+/**
+ * Preflight check: confirm Ollama is reachable and every model this run needs is
+ * already pulled. Throws an OllamaUnavailableError with an actionable message
+ * rather than letting a cryptic connection/404 surface mid-run.
+ */
+export async function assertModelsAvailable(timeoutMs = 4000): Promise<void> {
+  const baseUrl = resolveBaseUrl();
+  let installed: string[];
+  try {
+    const res = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = (await res.json()) as { models?: Array<{ name: string }> };
+    installed = (body.models ?? []).map((m) => m.name);
+  } catch (err) {
+    throw new OllamaUnavailableError(
+      `Could not reach Ollama at ${baseUrl} (${(err as Error).message}). ` +
+        `Is it running? Start it with \`ollama serve\`.`,
+    );
+  }
+
+  const missing = requiredModels().filter((m) => !installed.some((i) => modelMatches(i, m)));
+  if (missing.length > 0) {
+    throw new OllamaUnavailableError(
+      `Model(s) not found in Ollama: ${missing.join(", ")}. ` +
+        `Pull with: ${missing.map((m) => `\`ollama pull ${m}\``).join(", ")}. ` +
+        `Installed: ${installed.length ? installed.join(", ") : "(none)"}.`,
+    );
+  }
 }
