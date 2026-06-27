@@ -74,6 +74,26 @@ pnpm dev --cv ./data/cv.sample.md --job ./data/job-description.sample.md --model
 
 Generated artifacts (JSON + Markdown) are written to `outputs/`.
 
+## Grounding audit (deterministic)
+
+The "never invent experience" guarantee is **verified mechanically**, not just
+asked of the model. After a pack is assembled, every cited evidence string is
+checked against the raw CV with plain substring/token matching — no model in the
+loop, so it can't be talked around. Each claim is classified as:
+
+- **grounded** — the evidence is a (normalized) substring of the CV;
+- **partial** — enough token overlap to be a paraphrase of real CV content;
+- **no-evidence** — the honest `no direct evidence found` sentinel;
+- **ungrounded** — little/no overlap, i.e. likely invented.
+
+Two headline scores are printed in the CLI summary, embedded in the Markdown
+report, and stored on `pack.grounding` in the JSON:
+
+- **Grounding score** — of claims that *assert* evidence, the share backed by the
+  CV (partial counts as half).
+- **Honesty score** — the share of claims that are not fabricated. This is the
+  provable form of the headline promise.
+
 ## Configuration
 
 Set in `.env` (see `.env.example`):
@@ -82,6 +102,21 @@ Set in `.env` (see `.env.example`):
 - `OLLAMA_BASE_URL` — Ollama server URL (default `http://127.0.0.1:11434`)
 - `OLLAMA_TEMPERATURE` — sampling temperature (default `0.2`)
 - `PERF` — set to `1` to log each LLM call's duration as it finishes
+- `OLLAMA_MODEL_<ROLE>` — optional per-role model override (see below)
+
+### Per-role models
+
+Each LLM call declares a logical role, so you can route cheap, mechanical work to
+a small model and reserve a stronger model for generative/critical work. Set
+`OLLAMA_MODEL_<ROLE>` (each falls back to `OLLAMA_MODEL` when unset, preserving
+the single-model default). Roles: `ROUTING`, `PLANNING`, `ANALYSIS`, `WRITING`,
+`CRITIQUE`, `SYNTHESIS`.
+
+```bash
+# Small model for routing/planning; larger model for writing & critique.
+OLLAMA_MODEL_WRITING=qwen3:14b
+OLLAMA_MODEL_CRITIQUE=qwen3:14b
+```
 
 Every run prints a performance summary (wall time, number of LLM calls, total
 in-model time, and a per-call breakdown). Set `PERF=1` for live per-call timings:
@@ -113,6 +148,36 @@ OLLAMA_NUM_PARALLEL=3 ollama serve
 Note the speedup is sublinear: concurrent requests share the GPU, so each
 individual call gets slower even as total wall time drops.
 
+## Tests
+
+Fast, deterministic unit tests cover the pure orchestration logic (no model
+required): the plan topological sort / normalization, task scheduling, supervisor
+worker-eligibility, Phase 2 routing predicates, the Markdown renderer, the
+grounding verifier, and the eval scoring functions.
+
+```bash
+pnpm test         # node:test runner via tsx
+pnpm typecheck
+```
+
+## Evals
+
+The evals harness runs the orchestrator end-to-end against the live model and
+scores each run for **grounding rate**, **no-evidence honesty**, **completeness**,
+and **latency**, across phases and models. (This calls Ollama and is slow; the
+pure scoring logic is unit-tested separately.)
+
+```bash
+pnpm eval                     # default: phase 2, all fixtures
+pnpm eval --phases 1,3,4      # compare orchestration phases
+pnpm eval --model qwen3:14b   # override the model
+pnpm eval --fixture honesty   # only fixtures whose id contains "honesty"
+```
+
+Fixtures live in `src/evals/fixtures.ts` and include an honesty stress test (a CV
+with none of the job's skills, which must report missing matches rather than
+invent experience). A JSON report is written to `outputs/evals-<timestamp>.json`.
+
 ## Project structure
 
 ```
@@ -122,7 +187,7 @@ src/
     ollama.ts              # configurable ChatOllama factory
     structured.ts          # structured-output helper with retry + error handling
   schemas/
-    application.ts         # Zod schemas for every section of the pack
+    application.ts         # Zod schemas for every section of the pack (+ grounding report)
   tools/
     read-file.ts           # file reading (plain fn + LangChain tool)
     write-artifact.ts      # artifact writing (plain fn + LangChain tool)
@@ -134,10 +199,17 @@ src/
     phase4-supervisor-workers.ts # Phase 4: supervisor delegates to specialist workers
     phase5-collaboration.ts # Phase 5: writer/critic/verifier revision loop
     pack.ts                # shared helper to assemble a pack from graph state
+  grounding/
+    verify.ts              # deterministic grounding verifier (substring/token checks)
+  evals/
+    fixtures.ts            # CV + job eval fixtures (incl. an honesty stress test)
+    scoring.ts             # pure scoring: grounding, honesty, completeness, latency
+    run-evals.ts           # `pnpm eval` runner (live model, writes a JSON report)
   render/
     pack-markdown.ts       # render a pack as a Markdown report
+  **/*.test.ts             # node:test unit tests for the pure logic
 data/                      # sample CV + job description
-outputs/                   # generated packs (gitignored)
+outputs/                   # generated packs + eval reports (gitignored)
 ```
 
 ## Roadmap
@@ -149,3 +221,10 @@ This project is built in incremental, working milestones:
 - **Phase 3 (done):** plan-and-execute loop (planner → executor → evaluator with one retry).
 - **Phase 4 (done):** supervisor agent delegating to specialist worker agents (incl. a critic).
 - **Phase 5 (done):** multi-agent collaboration (writer ↔ critic ↔ evidence verifier loop).
+
+**Quality & tooling (done):**
+
+- Deterministic grounding verifier with provable grounding/honesty scores.
+- Evals harness scoring grounding, honesty, completeness, and latency across phases.
+- Unit tests for the pure orchestration logic.
+- Per-role model configuration.
