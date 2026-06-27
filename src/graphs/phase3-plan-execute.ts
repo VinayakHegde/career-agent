@@ -22,7 +22,7 @@ const MAX_RETRIES = 1;
 /* --------------------------- Plan normalization -------------------------- */
 
 /** Keep planner influence (ordering) but guarantee a valid, mode-correct plan. */
-function normalizeKinds(proposed: TaskKind[], mode: Mode): TaskKind[] {
+export function normalizeKinds(proposed: TaskKind[], mode: Mode): TaskKind[] {
   const allowed = new Set(MODE_TASKS[mode]);
   const seen = new Set<TaskKind>();
   const ordered: TaskKind[] = [];
@@ -40,7 +40,7 @@ function normalizeKinds(proposed: TaskKind[], mode: Mode): TaskKind[] {
 }
 
 /** Topologically sort a small task set so dependencies always come first. */
-function topoSort(kinds: TaskKind[]): TaskKind[] {
+export function topoSort(kinds: TaskKind[]): TaskKind[] {
   const set = new Set(kinds);
   const done = new Set<TaskKind>();
   const result: TaskKind[] = [];
@@ -62,7 +62,7 @@ function topoSort(kinds: TaskKind[]): TaskKind[] {
 
 /* ----------------------------- Task helpers ------------------------------ */
 
-function pickNextTask(tasks: Task[]): Task | undefined {
+export function pickNextTask(tasks: Task[]): Task | undefined {
   const doneKinds = new Set(tasks.filter((t) => t.status === "done").map((t) => t.kind));
   return tasks.find(
     (t) =>

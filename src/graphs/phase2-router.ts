@@ -54,10 +54,10 @@ async function synthNode(state: GraphStateType): Promise<Partial<GraphStateType>
 /* ----------------------------- Routing edges ----------------------------- */
 // Conditional edge functions read the resolved mode and pick the next node.
 
-const afterJob = (s: GraphStateType) => (s.mode === "job-analysis" ? END : "match");
-const afterMatch = (s: GraphStateType) => (s.mode === "interview-prep" ? "interview" : "gap");
-const afterWriter = (s: GraphStateType) => (s.mode === "full" ? "interview" : END);
-const afterInterview = (s: GraphStateType) => (s.mode === "full" ? "synth" : END);
+export const afterJob = (s: GraphStateType) => (s.mode === "job-analysis" ? END : "match");
+export const afterMatch = (s: GraphStateType) => (s.mode === "interview-prep" ? "interview" : "gap");
+export const afterWriter = (s: GraphStateType) => (s.mode === "full" ? "interview" : END);
+export const afterInterview = (s: GraphStateType) => (s.mode === "full" ? "synth" : END);
 
 /* ------------------------------ Graph wiring ----------------------------- */
 

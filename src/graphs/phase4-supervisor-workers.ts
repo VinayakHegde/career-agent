@@ -26,7 +26,7 @@ const WORKER_SECTION: Record<Worker, TaskKind | undefined> = {
 
 /* ----------------------------- Eligibility ------------------------------- */
 
-function completedKinds(state: SupervisorStateType): Set<TaskKind> {
+export function completedKinds(state: SupervisorStateType): Set<TaskKind> {
   const done = new Set<TaskKind>();
   if (state.jobAnalysis) done.add("job_analysis");
   if (state.matchAnalysis) done.add("match_analysis");
@@ -41,7 +41,7 @@ function completedKinds(state: SupervisorStateType): Set<TaskKind> {
  * Compute which workers the supervisor may legally choose right now. This is the
  * guardrail that keeps an 8B supervisor honest: it can only pick eligible steps.
  */
-function eligibleWorkers(state: SupervisorStateType): Worker[] {
+export function eligibleWorkers(state: SupervisorStateType): Worker[] {
   const need = new Set<TaskKind>(MODE_TASKS[state.mode]);
   const done = completedKinds(state);
   const eligible: Worker[] = [];
