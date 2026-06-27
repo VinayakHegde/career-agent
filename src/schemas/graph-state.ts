@@ -7,6 +7,7 @@ import type {
   InterviewPrep,
   StrategyBrief,
   Critique,
+  Verification,
   Mode,
 } from "./application.js";
 import type { Task, Evaluation } from "./plan.js";
@@ -112,3 +113,35 @@ export const SupervisorState = Annotation.Root({
 });
 
 export type SupervisorStateType = typeof SupervisorState.State;
+
+/**
+ * State for the Phase 5 collaboration loop. The writer, critic, and evidence
+ * verifier iterate on the CV bullets until the supervisor approves (or the
+ * revision budget is spent).
+ */
+export const CollaborationState = Annotation.Root({
+  cvText: Annotation<string>(),
+  jobText: Annotation<string>(),
+  mode: Annotation<Mode>(),
+
+  jobAnalysis: Annotation<JobAnalysis | undefined>(),
+  matchAnalysis: Annotation<MatchAnalysis | undefined>(),
+
+  /** The current draft of tailored bullets (overwritten each revision). */
+  cvTailoring: Annotation<CvTailoring | undefined>(),
+  /** Latest critic and verifier feedback on the current draft. */
+  critique: Annotation<Critique | undefined>(),
+  verification: Annotation<Verification | undefined>(),
+
+  /** Number of writer passes so far (1 draft + N revisions). */
+  round: Annotation<number>({ reducer: (_c, u) => u, default: () => 0 }),
+  /** Whether the supervisor has approved the final bullets. */
+  approved: Annotation<boolean>({ reducer: (_c, u) => u, default: () => false }),
+
+  log: Annotation<string[]>({
+    reducer: (current, update) => current.concat(update),
+    default: () => [],
+  }),
+});
+
+export type CollaborationStateType = typeof CollaborationState.State;
