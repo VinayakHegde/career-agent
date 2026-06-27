@@ -110,6 +110,22 @@ export const StrategyBriefSchema = z.object({
 });
 export type StrategyBrief = z.infer<typeof StrategyBriefSchema>;
 
+/* ------------------------- 7. Critic review ------------------------------- */
+
+export const CritiqueFindingSchema = z.object({
+  target: z.string().describe("The bullet/claim under review (quote a short snippet)."),
+  issue: z.enum(["exaggeration", "weak-evidence", "ungrounded", "other"]),
+  severity: z.enum(["high", "medium", "low"]),
+  suggestedFix: z.string().describe("A concrete, honest way to fix the issue."),
+});
+
+export const CritiqueSchema = z.object({
+  approved: z.boolean().describe("True only if there are no high/medium grounding issues."),
+  findings: z.array(CritiqueFindingSchema),
+  summary: z.string(),
+});
+export type Critique = z.infer<typeof CritiqueSchema>;
+
 /* --------------------------- The full pack -------------------------------- */
 
 export const ApplicationPackSchema = z.object({
@@ -119,6 +135,7 @@ export const ApplicationPackSchema = z.object({
   cvTailoring: CvTailoringSchema.optional(),
   interviewPrep: InterviewPrepSchema.optional(),
   strategyBrief: StrategyBriefSchema.optional(),
+  critique: CritiqueSchema.optional(),
 });
 export type ApplicationPack = z.infer<typeof ApplicationPackSchema>;
 
