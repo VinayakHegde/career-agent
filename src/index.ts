@@ -8,6 +8,7 @@ import { runPhase1 } from "./graphs/phase1-single-agent.js";
 import { runPhase2 } from "./graphs/phase2-router.js";
 import { runPhase3 } from "./graphs/phase3-plan-execute.js";
 import { runPhase4 } from "./graphs/phase4-supervisor-workers.js";
+import { runPhase5 } from "./graphs/phase5-collaboration.js";
 import { renderPackMarkdown } from "./render/pack-markdown.js";
 
 const HELP = `
@@ -21,7 +22,7 @@ Options:
   --job      Path to a job description Markdown file   (required)
   --mode     One of: ${MODES.join(", ")}
   --request  Free-text request; the Phase 2 router infers the mode from it
-  --phase    Orchestration version: 1 sequential, 2 router, 3 plan-execute, 4 supervisor  (default: 2)
+  --phase    1 sequential, 2 router, 3 plan-execute, 4 supervisor, 5 collaboration  (default: 2)
   --model    Override OLLAMA_MODEL for this run
   --help     Show this help
 
@@ -67,8 +68,8 @@ async function main(): Promise<void> {
   const explicitMode = values.mode as Mode | undefined;
 
   const phase = values.phase ?? "2";
-  if (!["1", "2", "3", "4"].includes(phase)) {
-    console.error(`Error: invalid --phase "${phase}". Use 1, 2, 3, or 4.`);
+  if (!["1", "2", "3", "4", "5"].includes(phase)) {
+    console.error(`Error: invalid --phase "${phase}". Use 1, 2, 3, 4, or 5.`);
     process.exitCode = 1;
     return;
   }
@@ -121,6 +122,16 @@ async function main(): Promise<void> {
       onStep: (label) => console.log(`  • ${label}`),
     });
     pack = result.pack;
+  } else if (phase === "5") {
+    mode = explicitMode ?? "cv-tailoring";
+    const result = await runPhase5({
+      cvText,
+      jobText,
+      mode,
+      onStep: (label) => console.log(`  • ${label}`),
+    });
+    pack = result.pack;
+    console.log(`\n  collaboration: ${result.approved ? "approved" : "accepted"} after ${result.rounds} writer pass(es)`);
   } else {
     const result = await runPhase2({
       cvText,
