@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { ChatOllamaInput } from "@langchain/ollama";
 import { getChatModel } from "./ollama.js";
+import { timed } from "./perf.js";
 
 export class StructuredOutputError extends Error {
   constructor(
@@ -49,10 +50,12 @@ export async function callStructured<S extends z.ZodTypeAny>(
         : "\n\nIMPORTANT: Your previous reply could not be parsed. " +
           "Return ONLY a single JSON object that matches the required schema exactly.";
     try {
-      return (await structured.invoke([
-        ["system", system],
-        ["human", human + reminder],
-      ])) as z.infer<S>;
+      return (await timed(name, () =>
+        structured.invoke([
+          ["system", system],
+          ["human", human + reminder],
+        ]),
+      )) as z.infer<S>;
     } catch (err) {
       lastError = err;
     }

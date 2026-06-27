@@ -1,9 +1,11 @@
 import { parseArgs } from "node:util";
+import { performance } from "node:perf_hooks";
 import { MODES, type ApplicationPack, type Mode } from "./schemas/application.js";
 import { readTextFile, FileReadError } from "./tools/read-file.js";
 import { writeArtifact, writeJsonArtifact, timestampSlug } from "./tools/write-artifact.js";
 import { resolveModel } from "./llm/ollama.js";
 import { StructuredOutputError } from "./llm/structured.js";
+import { getPerfSummary, formatDuration } from "./llm/perf.js";
 import { runPhase1 } from "./graphs/phase1-single-agent.js";
 import { runPhase2 } from "./graphs/phase2-router.js";
 import { runPhase3 } from "./graphs/phase3-plan-execute.js";
@@ -91,6 +93,7 @@ async function main(): Promise<void> {
 
   let pack: ApplicationPack;
   let mode: Mode;
+  const startedAt = performance.now();
 
   if (phase === "1") {
     mode = explicitMode ?? "full";
@@ -144,6 +147,8 @@ async function main(): Promise<void> {
     mode = result.mode;
   }
 
+  const wallMs = performance.now() - startedAt;
+
   const slug = `${mode}-${timestampSlug()}`;
   const jsonPath = await writeJsonArtifact(`pack-${slug}.json`, pack);
   const markdown = renderPackMarkdown(pack, { mode, model });
@@ -151,8 +156,22 @@ async function main(): Promise<void> {
 
   console.log(`\n✓ Done (mode: ${mode}).`);
   console.log(`  JSON:     ${jsonPath}`);
-  console.log(`  Markdown: ${mdPath}\n`);
+  console.log(`  Markdown: ${mdPath}`);
+  printPerfSummary(wallMs);
+  console.log("");
   console.log(markdown);
+}
+
+/** Print a per-run performance breakdown: wall time + per-call-kind timings. */
+function printPerfSummary(wallMs: number): void {
+  const { rows, llmTotalMs, callCount } = getPerfSummary();
+  console.log(`\n⏱  Performance`);
+  console.log(`  wall time:  ${formatDuration(wallMs)}`);
+  console.log(`  llm calls:  ${callCount} (${formatDuration(llmTotalMs)} in-model)`);
+  for (const r of rows) {
+    const count = r.count > 1 ? ` ×${r.count}` : "";
+    console.log(`    - ${r.label}${count}: total ${formatDuration(r.totalMs)}, avg ${formatDuration(r.avgMs)}`);
+  }
 }
 
 main().catch((err: unknown) => {
