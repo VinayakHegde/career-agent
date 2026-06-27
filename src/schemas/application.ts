@@ -126,6 +126,21 @@ export const CritiqueSchema = z.object({
 });
 export type Critique = z.infer<typeof CritiqueSchema>;
 
+/* ----------------------- 8. Evidence verification ------------------------- */
+
+export const VerificationItemSchema = z.object({
+  claim: z.string().describe("The specific claim/bullet being verified."),
+  verdict: z.enum(["supported", "partially-supported", "unsupported"]),
+  evidence,
+});
+
+export const VerificationSchema = z.object({
+  allSupported: z.boolean().describe("True only if every claim is at least partially supported."),
+  items: z.array(VerificationItemSchema),
+  notes: z.string(),
+});
+export type Verification = z.infer<typeof VerificationSchema>;
+
 /* --------------------------- The full pack -------------------------------- */
 
 export const ApplicationPackSchema = z.object({
@@ -136,6 +151,7 @@ export const ApplicationPackSchema = z.object({
   interviewPrep: InterviewPrepSchema.optional(),
   strategyBrief: StrategyBriefSchema.optional(),
   critique: CritiqueSchema.optional(),
+  verification: VerificationSchema.optional(),
 });
 export type ApplicationPack = z.infer<typeof ApplicationPackSchema>;
 

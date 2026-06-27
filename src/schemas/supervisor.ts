@@ -21,3 +21,10 @@ export const SupervisorDecisionSchema = z.object({
   reason: z.string().describe("One short sentence justifying the choice."),
 });
 export type SupervisorDecision = z.infer<typeof SupervisorDecisionSchema>;
+
+/** Used in the Phase 5 collaboration loop to approve or request another revision. */
+export const ApprovalSchema = z.object({
+  decision: z.enum(["approve", "revise"]),
+  reason: z.string().describe("One short sentence justifying the decision."),
+});
+export type Approval = z.infer<typeof ApprovalSchema>;
