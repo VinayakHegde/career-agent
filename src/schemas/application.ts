@@ -141,6 +141,52 @@ export const VerificationSchema = z.object({
 });
 export type Verification = z.infer<typeof VerificationSchema>;
 
+/* --------------------- 9. Deterministic grounding ------------------------- */
+
+/**
+ * The result of a single deterministic evidence check. Unlike the LLM-driven
+ * `Verification`, this is computed mechanically by substring/token matching the
+ * cited evidence against the raw CV text — it cannot be fooled by the model.
+ */
+export const GROUNDING_STATUSES = ["grounded", "partial", "no-evidence", "ungrounded"] as const;
+export type GroundingStatus = (typeof GROUNDING_STATUSES)[number];
+
+export const GroundingCheckSchema = z.object({
+  /** Where the claim came from, e.g. "cvTailoring.bullets[2]". */
+  source: z.string(),
+  /** The human-readable claim/suggestion the evidence is meant to support. */
+  claim: z.string(),
+  /** The evidence string as produced by the model. */
+  evidence: z.string(),
+  status: z.enum(GROUNDING_STATUSES),
+  /** Token-overlap ratio with the CV (1 = exact normalized substring). */
+  matchRatio: z.number().min(0).max(1),
+});
+export type GroundingCheck = z.infer<typeof GroundingCheckSchema>;
+
+export const GroundingReportSchema = z.object({
+  /**
+   * Grounding score in [0,1]: of all claims that *assert* evidence (i.e. not the
+   * honest no-evidence string), the share backed by real CV text (partial = 0.5).
+   */
+  groundingScore: z.number().min(0).max(1),
+  /**
+   * Honesty score in [0,1]: the share of claims that are NOT fabricated — i.e.
+   * grounded, partially grounded, or explicitly marked "no direct evidence found".
+   * This is the provable form of the "never invent experience" guarantee.
+   */
+  honestyScore: z.number().min(0).max(1),
+  totals: z.object({
+    total: z.number().int(),
+    grounded: z.number().int(),
+    partial: z.number().int(),
+    noEvidence: z.number().int(),
+    ungrounded: z.number().int(),
+  }),
+  checks: z.array(GroundingCheckSchema),
+});
+export type GroundingReport = z.infer<typeof GroundingReportSchema>;
+
 /* --------------------------- The full pack -------------------------------- */
 
 export const ApplicationPackSchema = z.object({
@@ -152,6 +198,8 @@ export const ApplicationPackSchema = z.object({
   strategyBrief: StrategyBriefSchema.optional(),
   critique: CritiqueSchema.optional(),
   verification: VerificationSchema.optional(),
+  /** Deterministic grounding audit, computed after the pack is assembled. */
+  grounding: GroundingReportSchema.optional(),
 });
 export type ApplicationPack = z.infer<typeof ApplicationPackSchema>;
 

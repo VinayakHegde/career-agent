@@ -6,6 +6,7 @@ import { writeArtifact, writeJsonArtifact, timestampSlug } from "./tools/write-a
 import { resolveModel } from "./llm/ollama.js";
 import { StructuredOutputError } from "./llm/structured.js";
 import { getPerfSummary, formatDuration } from "./llm/perf.js";
+import { verifyGrounding } from "./grounding/verify.js";
 import { runPhase1 } from "./graphs/phase1-single-agent.js";
 import { runPhase2 } from "./graphs/phase2-router.js";
 import { runPhase3 } from "./graphs/phase3-plan-execute.js";
@@ -17,7 +18,7 @@ const HELP = `
 Career Agent Orchestrator
 
 Usage:
-  pnpm dev --cv <path> --job <path> [--mode <mode>] [--request "<text>"] [--phase 1|2] [--model <name>]
+  pnpm dev --cv <path> --job <path> [--mode <mode>] [--request "<text>"] [--phase 1-5] [--model <name>]
 
 Options:
   --cv       Path to a CV/resume Markdown file        (required)
@@ -149,6 +150,10 @@ async function main(): Promise<void> {
 
   const wallMs = performance.now() - startedAt;
 
+  // Deterministic grounding audit: cheap, model-free, and always run so the
+  // "never invent experience" guarantee is provable rather than just asserted.
+  pack.grounding = verifyGrounding(pack, cvText);
+
   const slug = `${mode}-${timestampSlug()}`;
   const jsonPath = await writeJsonArtifact(`pack-${slug}.json`, pack);
   const markdown = renderPackMarkdown(pack, { mode, model });
@@ -157,9 +162,26 @@ async function main(): Promise<void> {
   console.log(`\n✓ Done (mode: ${mode}).`);
   console.log(`  JSON:     ${jsonPath}`);
   console.log(`  Markdown: ${mdPath}`);
+  printGroundingSummary(pack);
   printPerfSummary(wallMs);
   console.log("");
   console.log(markdown);
+}
+
+/** Print the deterministic grounding audit headline. */
+function printGroundingSummary(pack: ApplicationPack): void {
+  const g = pack.grounding;
+  if (!g) return;
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  console.log(`\n🔎 Grounding (deterministic)`);
+  console.log(`  grounding score: ${pct(g.groundingScore)}   honesty: ${pct(g.honestyScore)}`);
+  console.log(
+    `  ${g.totals.grounded} grounded · ${g.totals.partial} partial · ` +
+      `${g.totals.noEvidence} no-evidence · ${g.totals.ungrounded} ungrounded (of ${g.totals.total})`,
+  );
+  if (g.totals.ungrounded > 0) {
+    console.log(`  ⚠️  ${g.totals.ungrounded} cited evidence string(s) not found in the CV.`);
+  }
 }
 
 /** Print a per-run performance breakdown: wall time + per-call-kind timings. */

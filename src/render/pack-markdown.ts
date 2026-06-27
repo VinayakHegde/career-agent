@@ -1,7 +1,22 @@
-import { NO_EVIDENCE, type ApplicationPack } from "../schemas/application.js";
+import {
+  NO_EVIDENCE,
+  type ApplicationPack,
+  type GroundingStatus,
+} from "../schemas/application.js";
 
 function evidenceLabel(evidence: string): string {
   return evidence.trim().toLowerCase() === NO_EVIDENCE ? `_${NO_EVIDENCE}_` : `"${evidence}"`;
+}
+
+const GROUNDING_ICON: Record<GroundingStatus, string> = {
+  grounded: "✅",
+  partial: "🟡",
+  "no-evidence": "➖",
+  ungrounded: "❌",
+};
+
+function pct(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 /** Render an application pack as a readable Markdown report. */
@@ -112,6 +127,32 @@ export function renderPackMarkdown(pack: ApplicationPack, meta: { mode: string; 
     if (v.notes.trim()) {
       lines.push("");
       lines.push(v.notes);
+    }
+    lines.push("");
+  }
+
+  if (pack.grounding) {
+    const g = pack.grounding;
+    lines.push(`## Grounding Audit (deterministic)`);
+    lines.push("");
+    lines.push(`- **Grounding score:** ${pct(g.groundingScore)} (cited evidence backed by the CV)`);
+    lines.push(`- **Honesty score:** ${pct(g.honestyScore)} (claims that are not fabricated)`);
+    lines.push(
+      `- **Breakdown:** ${g.totals.grounded} grounded · ${g.totals.partial} partial · ` +
+        `${g.totals.noEvidence} no-evidence · ${g.totals.ungrounded} ungrounded ` +
+        `(of ${g.totals.total})`,
+    );
+    const flagged = g.checks.filter((c) => c.status === "ungrounded");
+    if (flagged.length) {
+      lines.push("");
+      lines.push(`**Ungrounded claims (not found in the CV):**`);
+      for (const c of flagged) {
+        lines.push(`- ${GROUNDING_ICON[c.status]} \`${c.source}\` — ${c.claim}`);
+        lines.push(`  - Evidence: ${evidenceLabel(c.evidence)}`);
+      }
+    } else {
+      lines.push("");
+      lines.push(`_No ungrounded claims detected._`);
     }
     lines.push("");
   }
