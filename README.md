@@ -94,6 +94,11 @@ report, and stored on `pack.grounding` in the JSON:
 - **Honesty score** — the share of claims that are not fabricated. This is the
   provable form of the headline promise.
 
+The check is also a **hard gate** inside the Phase 5 collaboration loop: the
+supervisor will not approve tailored bullets while any bullet cites evidence that
+isn't in the CV, and the deterministic list of ungrounded bullets is fed back to
+the writer for revision — so the loop provably converges toward grounded output.
+
 ## Configuration
 
 Set in `.env` (see `.env.example`):
@@ -101,8 +106,13 @@ Set in `.env` (see `.env.example`):
 - `OLLAMA_MODEL` — model name (default `qwen3:8b`)
 - `OLLAMA_BASE_URL` — Ollama server URL (default `http://127.0.0.1:11434`)
 - `OLLAMA_TEMPERATURE` — sampling temperature (default `0.2`)
-- `PERF` — set to `1` to log each LLM call's duration as it finishes
+- `OLLAMA_SEED` — optional fixed sampling seed for reproducible runs (unset by default)
+- `PERF` — set to `1` to log each LLM call's duration + token usage as it finishes
 - `OLLAMA_MODEL_<ROLE>` — optional per-role model override (see below)
+
+On startup the CLI runs a **preflight check**: if Ollama is unreachable or a
+required model (including any per-role models) isn't pulled, it exits with an
+actionable message instead of failing mid-run.
 
 ### Per-role models
 
@@ -119,7 +129,8 @@ OLLAMA_MODEL_CRITIQUE=qwen3:14b
 ```
 
 Every run prints a performance summary (wall time, number of LLM calls, total
-in-model time, and a per-call breakdown). Set `PERF=1` for live per-call timings:
+in-model time, **token usage**, and a per-call breakdown). Token counts come from
+Ollama's reported prompt/eval counts. Set `PERF=1` for live per-call timings:
 
 ```bash
 PERF=1 pnpm dev --cv ./data/cv.sample.md --job ./data/job-description.sample.md --mode full
@@ -150,10 +161,15 @@ individual call gets slower even as total wall time drops.
 
 ## Tests
 
-Fast, deterministic unit tests cover the pure orchestration logic (no model
-required): the plan topological sort / normalization, task scheduling, supervisor
-worker-eligibility, Phase 2 routing predicates, the Markdown renderer, the
-grounding verifier, and the eval scoring functions.
+Fast, deterministic tests run with no model required:
+
+- **Unit tests** for the pure logic: plan topological sort / normalization, task
+  scheduling, supervisor worker-eligibility, Phase 2 routing predicates, bullet
+  dedup, the Markdown renderer, the grounding verifier, and eval scoring.
+- **Graph-wiring tests** that exercise the real compiled LangGraph graphs end to
+  end with a canned LLM stub (`src/testing/canned-llm.ts`), asserting which
+  sections each mode/phase produces. These use the node:test module mocker
+  (`--experimental-test-module-mocks`, already wired into the `test` script).
 
 ```bash
 pnpm test         # node:test runner via tsx
@@ -167,11 +183,15 @@ scores each run for **grounding rate**, **no-evidence honesty**, **completeness*
 and **latency**, across phases and models. (This calls Ollama and is slow; the
 pure scoring logic is unit-tested separately.)
 
+Runs are reproducible by default: the harness sets `temperature 0` and a fixed
+`seed`, both overridable via flags.
+
 ```bash
-pnpm eval                     # default: phase 2, all fixtures
+pnpm eval                     # default: phase 2, all fixtures, temp 0 + seed 42
 pnpm eval --phases 1,3,4      # compare orchestration phases
 pnpm eval --model qwen3:14b   # override the model
 pnpm eval --fixture honesty   # only fixtures whose id contains "honesty"
+pnpm eval --seed 7 --temperature 0.4   # override sampling
 ```
 
 Fixtures live in `src/evals/fixtures.ts` and include an honesty stress test (a CV
@@ -182,10 +202,12 @@ invent experience). A JSON report is written to `outputs/evals-<timestamp>.json`
 
 ```
 src/
-  index.ts                 # CLI entrypoint (arg parsing, file IO, orchestration)
+  index.ts                 # CLI entrypoint (arg parsing, file IO, presentation)
+  core/
+    orchestrator.ts        # CLI-agnostic facade: run a phase -> graded pack + events
   llm/
-    ollama.ts              # configurable ChatOllama factory
-    structured.ts          # structured-output helper with retry + error handling
+    ollama.ts              # configurable ChatOllama factory + model preflight
+    structured.ts          # structured-output helper with retry + token capture
   schemas/
     application.ts         # Zod schemas for every section of the pack (+ grounding report)
   tools/
@@ -207,7 +229,9 @@ src/
     run-evals.ts           # `pnpm eval` runner (live model, writes a JSON report)
   render/
     pack-markdown.ts       # render a pack as a Markdown report
-  **/*.test.ts             # node:test unit tests for the pure logic
+  testing/
+    canned-llm.ts          # model-free callStructured stub for graph-wiring tests
+  **/*.test.ts             # node:test unit + graph-wiring tests
 data/                      # sample CV + job description
 outputs/                   # generated packs + eval reports (gitignored)
 ```
@@ -224,7 +248,12 @@ This project is built in incremental, working milestones:
 
 **Quality & tooling (done):**
 
-- Deterministic grounding verifier with provable grounding/honesty scores.
-- Evals harness scoring grounding, honesty, completeness, and latency across phases.
-- Unit tests for the pure orchestration logic.
-- Per-role model configuration.
+- Deterministic grounding verifier with provable grounding/honesty scores, used
+  as a hard gate in the Phase 5 revision loop.
+- Evals harness (reproducible by default) scoring grounding, honesty,
+  completeness, and latency across phases.
+- Unit tests + graph-wiring tests (real graphs, canned LLM).
+- Per-role model configuration; bullet dedup; token metrics; model preflight;
+  prompt-injection hardening.
+- CLI-agnostic `core/` orchestration layer (shared by the CLI and evals; ready
+  for an HTTP API).
