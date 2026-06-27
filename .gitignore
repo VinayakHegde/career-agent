@@ -1,0 +1,8 @@
+node_modules/
+.env
+.DS_Store
+*.log
+
+# Generated application packs (keep the folder, ignore its contents)
+outputs/*
+!outputs/.gitkeep
