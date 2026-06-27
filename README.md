@@ -64,6 +64,7 @@ Choose the orchestration version with `--phase` (default `2`):
 - `--phase 2` — LangGraph graph with a router + conditional edges
 - `--phase 3` — plan-and-execute loop (planner → executor → evaluator, one retry)
 - `--phase 4` — supervisor delegates to specialist workers (incl. a critic)
+- `--phase 5` — collaboration loop (writer → critic → evidence verifier → revise → approve)
 
 Override the model per run without editing `.env`:
 
@@ -100,6 +101,7 @@ src/
     phase2-router.ts       # Phase 2: LangGraph graph + router + conditional edges
     phase3-plan-execute.ts # Phase 3: planner -> executor loop -> evaluator (retry once)
     phase4-supervisor-workers.ts # Phase 4: supervisor delegates to specialist workers
+    phase5-collaboration.ts # Phase 5: writer/critic/verifier revision loop
     pack.ts                # shared helper to assemble a pack from graph state
   render/
     pack-markdown.ts       # render a pack as a Markdown report
@@ -115,4 +117,4 @@ This project is built in incremental, working milestones:
 - **Phase 2 (done):** LangGraph.js graph with state, nodes, and a router that picks the mode.
 - **Phase 3 (done):** plan-and-execute loop (planner → executor → evaluator with one retry).
 - **Phase 4 (done):** supervisor agent delegating to specialist worker agents (incl. a critic).
-- **Phase 5:** multi-agent collaboration (writer ↔ critic ↔ evidence verifier loop).
+- **Phase 5 (done):** multi-agent collaboration (writer ↔ critic ↔ evidence verifier loop).
