@@ -1,12 +1,14 @@
 import { parseArgs } from "node:util";
 import { MODES, type ApplicationPack, type Mode } from "./schemas/application.js";
-import { readTextFile, FileReadError } from "./tools/read-file.js";
+import { FileReadError } from "./tools/read-file.js";
+import { readDocument } from "./tools/read-document.js";
 import { writeArtifact, writeJsonArtifact, timestampSlug } from "./tools/write-artifact.js";
 import { resolveModel, assertModelsAvailable, OllamaUnavailableError } from "./llm/ollama.js";
 import { StructuredOutputError } from "./llm/structured.js";
 import { formatDuration, type PerfSummary } from "./llm/perf.js";
 import { generateApplicationPack, isPhase } from "./core/orchestrator.js";
 import { renderPackMarkdown } from "./render/pack-markdown.js";
+import { saveApplication, listApplications, getApplication } from "./store/applications.js";
 
 const HELP = `
 Career Agent Orchestrator
@@ -15,17 +17,24 @@ Usage:
   pnpm dev --cv <path> --job <path> [--mode <mode>] [--request "<text>"] [--phase 1-5] [--model <name>]
 
 Options:
-  --cv       Path to a CV/resume Markdown file        (required)
-  --job      Path to a job description Markdown file   (required)
+  --cv       Path to a CV/resume file (.md, .txt, .pdf, .docx)        (required)
+  --job      Path to a job description file (.md, .txt, .pdf, .docx)  (required)
   --mode     One of: ${MODES.join(", ")}
   --request  Free-text request; the Phase 2 router infers the mode from it
   --phase    1 sequential, 2 router, 3 plan-execute, 4 supervisor, 5 collaboration  (default: 2)
   --model    Override OLLAMA_MODEL for this run
+  --no-db    Do not save this run to the local application history
   --help     Show this help
+
+History:
+  --list        List recent saved applications and exit
+  --show <id>   Print a saved application (Markdown) and exit
 
 Examples:
   pnpm dev --cv ./data/cv.sample.md --job ./data/job-description.sample.md --mode full
   pnpm dev --cv ./data/cv.sample.md --job ./data/job-description.sample.md --request "help me prep for the interview"
+  pnpm dev --list
+  pnpm dev --show 3
 `.trim();
 
 function isMode(value: string): value is Mode {
@@ -42,11 +51,24 @@ async function main(): Promise<void> {
       phase: { type: "string", default: "2" },
       model: { type: "string" },
       help: { type: "boolean", default: false },
+      list: { type: "boolean", default: false },
+      show: { type: "string" },
+      "no-db": { type: "boolean", default: false },
     },
   });
 
   if (values.help) {
     console.log(HELP);
+    return;
+  }
+
+  // History subcommands run without needing a CV/job or a live model.
+  if (values.list) {
+    printApplicationList();
+    return;
+  }
+  if (values.show !== undefined) {
+    showApplication(values.show);
     return;
   }
 
@@ -78,8 +100,8 @@ async function main(): Promise<void> {
   await assertModelsAvailable();
 
   const [cvText, jobText] = await Promise.all([
-    readTextFile(values.cv),
-    readTextFile(values.job),
+    readDocument(values.cv),
+    readDocument(values.job),
   ]);
 
   console.log(`\n▶ Generating application pack`);
@@ -115,10 +137,49 @@ async function main(): Promise<void> {
   console.log(`\n✓ Done (mode: ${mode}).`);
   console.log(`  JSON:     ${jsonPath}`);
   console.log(`  Markdown: ${mdPath}`);
+  if (!values["no-db"]) {
+    const id = saveApplication({ model, phase, mode, cvText, jobText, pack });
+    console.log(`  Saved:    application #${id} (view with: pnpm dev --show ${id})`);
+  }
   printGroundingSummary(pack);
   printPerfSummary(result.wallMs, result.perf);
   console.log("");
   console.log(markdown);
+}
+
+/** Print the most recent saved applications as a compact table. */
+function printApplicationList(): void {
+  const apps = listApplications();
+  if (apps.length === 0) {
+    console.log("No saved applications yet. Run a generation first (history is on by default).");
+    return;
+  }
+  const pct = (v: number | null) => (v == null ? "  — " : `${Math.round(v * 100)}%`.padStart(4));
+  console.log(`\nSaved applications (most recent first):\n`);
+  for (const a of apps) {
+    console.log(
+      `  #${String(a.id).padEnd(4)} ${a.createdAt}  phase ${a.phase}  ${a.mode.padEnd(14)} ` +
+        `${a.model.padEnd(12)} ground ${pct(a.groundingScore)} · honesty ${pct(a.honestyScore)}`,
+    );
+  }
+  console.log(`\nView one with: pnpm dev --show <id>\n`);
+}
+
+/** Render a stored application to Markdown and print it. */
+function showApplication(idArg: string): void {
+  const id = Number(idArg);
+  if (!Number.isInteger(id) || id <= 0) {
+    console.error(`Error: --show expects a positive application id, got "${idArg}".`);
+    process.exitCode = 1;
+    return;
+  }
+  const app = getApplication(id);
+  if (!app) {
+    console.error(`No saved application with id ${id}. Use --list to see available ids.`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(renderPackMarkdown(app.pack, { mode: app.mode, model: app.model }));
 }
 
 /** Print the deterministic grounding audit headline. */

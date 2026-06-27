@@ -6,3 +6,6 @@ node_modules/
 # Generated application packs (keep the folder, ignore its contents)
 outputs/*
 !outputs/.gitkeep
+
+# Local SQLite database (saved application history)
+.data/

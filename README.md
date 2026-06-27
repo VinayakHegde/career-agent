@@ -41,6 +41,9 @@ cp .env.example .env      # then edit if needed
 pnpm dev --cv ./data/cv.sample.md --job ./data/job-description.sample.md --mode full
 ```
 
+The `--cv` and `--job` inputs accept **Markdown/plain text, PDF, or Word (`.docx`)**;
+text is extracted automatically based on the file extension.
+
 Modes:
 
 | Mode            | Produces                                                        |
@@ -73,6 +76,20 @@ pnpm dev --cv ./data/cv.sample.md --job ./data/job-description.sample.md --model
 ```
 
 Generated artifacts (JSON + Markdown) are written to `outputs/`.
+
+## History (saved applications)
+
+Every run is saved to a local SQLite database (`.data/career-agent.db` by default,
+override with `CAREER_DB_PATH`) so you can browse and re-open past results without
+re-calling a model. Pass `--no-db` to skip saving a run.
+
+```bash
+pnpm dev --list        # list recent runs with their grounding/honesty scores
+pnpm dev --show 3      # re-render saved application #3 as Markdown
+```
+
+Each record stores the inputs (CV + job text), the full pack, and the headline
+grounding scores — the persistence layer the planned web app will build on.
 
 ## Grounding audit (deterministic)
 
@@ -109,6 +126,7 @@ Set in `.env` (see `.env.example`):
 - `OLLAMA_SEED` — optional fixed sampling seed for reproducible runs (unset by default)
 - `PERF` — set to `1` to log each LLM call's duration + token usage as it finishes
 - `OLLAMA_MODEL_<ROLE>` — optional per-role model override (see below)
+- `CAREER_DB_PATH` — SQLite history database path (default `.data/career-agent.db`)
 
 On startup the CLI runs a **preflight check**: if Ollama is unreachable or a
 required model (including any per-role models) isn't pulled, it exits with an
@@ -211,8 +229,12 @@ src/
   schemas/
     application.ts         # Zod schemas for every section of the pack (+ grounding report)
   tools/
-    read-file.ts           # file reading (plain fn + LangChain tool)
+    read-file.ts           # plain-text file reading (plain fn + LangChain tool)
+    read-document.ts       # CV/job text extraction from Markdown, PDF, and .docx
     write-artifact.ts      # artifact writing (plain fn + LangChain tool)
+  store/
+    db.ts                  # SQLite connection + schema (better-sqlite3)
+    applications.ts        # save/list/get saved application runs
   agents/                  # one focused, grounded agent per analysis step
   graphs/
     phase1-single-agent.ts # Phase 1: sequential pipeline
@@ -257,3 +279,9 @@ This project is built in incremental, working milestones:
   prompt-injection hardening.
 - CLI-agnostic `core/` orchestration layer (shared by the CLI and evals; ready
   for an HTTP API).
+
+**Web-app readiness (in progress):**
+
+- Multi-format input (Markdown / PDF / `.docx`) extracted to text.
+- SQLite-backed history of saved applications (`--list` / `--show`).
+- Next: an HTTP API over the `core/` layer, then a web UI.
