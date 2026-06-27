@@ -8,6 +8,7 @@ import type {
   StrategyBrief,
   Mode,
 } from "./application.js";
+import type { Task, Evaluation } from "./plan.js";
 
 /**
  * The shared state that flows through the LangGraph graph. Each node receives
@@ -41,3 +42,38 @@ export const GraphState = Annotation.Root({
 });
 
 export type GraphStateType = typeof GraphState.State;
+
+/**
+ * State for the Phase 3 plan-and-execute graph. Extends the basic pack slices
+ * with a typed task list, an evaluation result, and a retry counter so the
+ * graph can self-correct once before finishing.
+ */
+export const PlanExecuteState = Annotation.Root({
+  cvText: Annotation<string>(),
+  jobText: Annotation<string>(),
+  mode: Annotation<Mode>(),
+
+  /** The planner's task list; the executor mutates statuses in place. */
+  tasks: Annotation<Task[]>({ reducer: (_current, update) => update, default: () => [] }),
+
+  // Result slices, filled in by the executor.
+  jobAnalysis: Annotation<JobAnalysis | undefined>(),
+  matchAnalysis: Annotation<MatchAnalysis | undefined>(),
+  gapAnalysis: Annotation<GapAnalysis | undefined>(),
+  cvTailoring: Annotation<CvTailoring | undefined>(),
+  interviewPrep: Annotation<InterviewPrep | undefined>(),
+  strategyBrief: Annotation<StrategyBrief | undefined>(),
+
+  /** The evaluator's verdict on the latest pack. */
+  evaluation: Annotation<Evaluation | undefined>(),
+
+  /** How many self-correction retries have been spent (max 1). */
+  retryCount: Annotation<number>({ reducer: (_current, update) => update, default: () => 0 }),
+
+  log: Annotation<string[]>({
+    reducer: (current, update) => current.concat(update),
+    default: () => [],
+  }),
+});
+
+export type PlanExecuteStateType = typeof PlanExecuteState.State;
