@@ -1,15 +1,11 @@
 import { parseArgs } from "node:util";
 import { performance } from "node:perf_hooks";
-import type { ApplicationPack, Mode } from "../schemas/application.js";
+import type { Mode } from "../schemas/application.js";
 import { resolveModel } from "../llm/ollama.js";
 import { formatDuration } from "../llm/perf.js";
 import { writeJsonArtifact, timestampSlug } from "../tools/write-artifact.js";
-import { runPhase1 } from "../graphs/phase1-single-agent.js";
-import { runPhase2 } from "../graphs/phase2-router.js";
-import { runPhase3 } from "../graphs/phase3-plan-execute.js";
-import { runPhase4 } from "../graphs/phase4-supervisor-workers.js";
-import { runPhase5 } from "../graphs/phase5-collaboration.js";
-import { getFixtures, type EvalFixture } from "./fixtures.js";
+import { generateApplicationPack, PHASES, type Phase } from "../core/orchestrator.js";
+import { getFixtures } from "./fixtures.js";
 import { scorePack, aggregate, type EvalScore } from "./scoring.js";
 
 /**
@@ -27,28 +23,9 @@ import { scorePack, aggregate, type EvalScore } from "./scoring.js";
  *   pnpm eval --fixture honesty        # only fixtures whose id contains "honesty"
  */
 
-type PhaseId = "1" | "2" | "3" | "4" | "5";
-const VALID_PHASES: PhaseId[] = ["1", "2", "3", "4", "5"];
-
-async function runPhase(phase: PhaseId, fx: EvalFixture): Promise<ApplicationPack> {
-  const base = { cvText: fx.cvText, jobText: fx.jobText, mode: fx.mode as Mode };
-  switch (phase) {
-    case "1":
-      return runPhase1(base);
-    case "2":
-      return (await runPhase2({ ...base })).pack;
-    case "3":
-      return (await runPhase3(base)).pack;
-    case "4":
-      return (await runPhase4(base)).pack;
-    case "5":
-      return (await runPhase5(base)).pack;
-  }
-}
-
 interface EvalRow {
   fixtureId: string;
-  phase: PhaseId;
+  phase: Phase;
   mode: Mode;
   model: string;
   score?: EvalScore;
@@ -79,26 +56,33 @@ async function main(): Promise<void> {
       phases: { type: "string", default: "2" },
       model: { type: "string" },
       fixture: { type: "string" },
+      seed: { type: "string", default: "42" },
+      temperature: { type: "string", default: "0" },
       help: { type: "boolean", default: false },
     },
   });
 
   if (values.help) {
     console.log(
-      "Usage: pnpm eval [--phases 1,2,3,4,5] [--model <name>] [--fixture <id-substring>]",
+      "Usage: pnpm eval [--phases 1,2,3,4,5] [--model <name>] [--fixture <id-substring>] " +
+        "[--seed <int>] [--temperature <float>]",
     );
     return;
   }
 
   if (values.model) process.env.OLLAMA_MODEL = values.model;
+  // Default to deterministic sampling (temp 0 + fixed seed) so eval scores are
+  // reproducible across runs; both are overridable via flags.
+  process.env.OLLAMA_TEMPERATURE = values.temperature;
+  process.env.OLLAMA_SEED = values.seed;
   const model = resolveModel();
 
   const phases = values.phases
     .split(",")
     .map((p) => p.trim())
-    .filter((p): p is PhaseId => (VALID_PHASES as string[]).includes(p));
+    .filter((p): p is Phase => (PHASES as string[]).includes(p));
   if (phases.length === 0) {
-    console.error(`No valid phases in "${values.phases}". Use any of: ${VALID_PHASES.join(", ")}.`);
+    console.error(`No valid phases in "${values.phases}". Use any of: ${PHASES.join(", ")}.`);
     process.exitCode = 1;
     return;
   }
@@ -115,6 +99,7 @@ async function main(): Promise<void> {
 
   console.log(`\n▶ Running evals`);
   console.log(`  model:    ${model}`);
+  console.log(`  sampling: temperature ${values.temperature}, seed ${values.seed}`);
   console.log(`  phases:   ${phases.join(", ")}`);
   console.log(`  fixtures: ${fixtures.map((f) => f.id).join(", ")}\n`);
 
@@ -124,7 +109,12 @@ async function main(): Promise<void> {
       const startedAt = performance.now();
       const row: EvalRow = { fixtureId: fx.id, phase, mode: fx.mode, model };
       try {
-        const pack = await runPhase(phase, fx);
+        const { pack } = await generateApplicationPack({
+          cvText: fx.cvText,
+          jobText: fx.jobText,
+          phase,
+          mode: fx.mode,
+        });
         const latencyMs = performance.now() - startedAt;
         row.score = scorePack(pack, fx.cvText, fx.mode, latencyMs);
       } catch (err) {
@@ -151,6 +141,8 @@ async function main(): Promise<void> {
   const report = {
     generatedAt: new Date().toISOString(),
     model,
+    temperature: values.temperature,
+    seed: values.seed,
     phases,
     rows,
     summary: phases.map((phase) => ({

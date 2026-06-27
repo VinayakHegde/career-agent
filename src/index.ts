@@ -1,17 +1,11 @@
 import { parseArgs } from "node:util";
-import { performance } from "node:perf_hooks";
 import { MODES, type ApplicationPack, type Mode } from "./schemas/application.js";
 import { readTextFile, FileReadError } from "./tools/read-file.js";
 import { writeArtifact, writeJsonArtifact, timestampSlug } from "./tools/write-artifact.js";
-import { resolveModel } from "./llm/ollama.js";
+import { resolveModel, assertModelsAvailable, OllamaUnavailableError } from "./llm/ollama.js";
 import { StructuredOutputError } from "./llm/structured.js";
-import { getPerfSummary, formatDuration } from "./llm/perf.js";
-import { verifyGrounding } from "./grounding/verify.js";
-import { runPhase1 } from "./graphs/phase1-single-agent.js";
-import { runPhase2 } from "./graphs/phase2-router.js";
-import { runPhase3 } from "./graphs/phase3-plan-execute.js";
-import { runPhase4 } from "./graphs/phase4-supervisor-workers.js";
-import { runPhase5 } from "./graphs/phase5-collaboration.js";
+import { formatDuration, type PerfSummary } from "./llm/perf.js";
+import { generateApplicationPack, isPhase } from "./core/orchestrator.js";
 import { renderPackMarkdown } from "./render/pack-markdown.js";
 
 const HELP = `
@@ -71,7 +65,7 @@ async function main(): Promise<void> {
   const explicitMode = values.mode as Mode | undefined;
 
   const phase = values.phase ?? "2";
-  if (!["1", "2", "3", "4", "5"].includes(phase)) {
+  if (!isPhase(phase)) {
     console.error(`Error: invalid --phase "${phase}". Use 1, 2, 3, 4, or 5.`);
     process.exitCode = 1;
     return;
@@ -79,6 +73,9 @@ async function main(): Promise<void> {
 
   if (values.model) process.env.OLLAMA_MODEL = values.model;
   const model = resolveModel();
+
+  // Fail fast with an actionable message if Ollama is down or the model is missing.
+  await assertModelsAvailable();
 
   const [cvText, jobText] = await Promise.all([
     readTextFile(values.cv),
@@ -92,67 +89,23 @@ async function main(): Promise<void> {
   else if (values.request) console.log(`  request: "${values.request}" (router will pick the mode)`);
   console.log("");
 
-  let pack: ApplicationPack;
-  let mode: Mode;
-  const startedAt = performance.now();
+  const result = await generateApplicationPack({
+    cvText,
+    jobText,
+    phase,
+    mode: explicitMode,
+    request: values.request,
+    onEvent: (event) => console.log(`  • ${event.label}`),
+  });
+  const { pack, mode } = result;
 
-  if (phase === "1") {
-    mode = explicitMode ?? "full";
-    pack = await runPhase1({
-      cvText,
-      jobText,
-      mode,
-      onStep: (label) => console.log(`  • ${label}…`),
-    });
-  } else if (phase === "3") {
-    mode = explicitMode ?? "full";
-    const result = await runPhase3({
-      cvText,
-      jobText,
-      mode,
-      onStep: (label) => console.log(`  • ${label}`),
-    });
-    pack = result.pack;
-    if (result.evaluation) {
-      console.log(`\n  evaluator: ${result.evaluation.complete ? "complete" : "accepted with notes"}`);
-      console.log(`  ${result.evaluation.summary}`);
-    }
-  } else if (phase === "4") {
-    mode = explicitMode ?? "full";
-    const result = await runPhase4({
-      cvText,
-      jobText,
-      mode,
-      onStep: (label) => console.log(`  • ${label}`),
-    });
-    pack = result.pack;
-  } else if (phase === "5") {
-    mode = explicitMode ?? "cv-tailoring";
-    const result = await runPhase5({
-      cvText,
-      jobText,
-      mode,
-      onStep: (label) => console.log(`  • ${label}`),
-    });
-    pack = result.pack;
-    console.log(`\n  collaboration: ${result.approved ? "approved" : "accepted"} after ${result.rounds} writer pass(es)`);
-  } else {
-    const result = await runPhase2({
-      cvText,
-      jobText,
-      mode: explicitMode,
-      request: values.request,
-      onStep: (node) => console.log(`  • node: ${node}`),
-    });
-    pack = result.pack;
-    mode = result.mode;
+  if (result.evaluation) {
+    console.log(`\n  evaluator: ${result.evaluation.complete ? "complete" : "accepted with notes"}`);
+    console.log(`  ${result.evaluation.summary}`);
   }
-
-  const wallMs = performance.now() - startedAt;
-
-  // Deterministic grounding audit: cheap, model-free, and always run so the
-  // "never invent experience" guarantee is provable rather than just asserted.
-  pack.grounding = verifyGrounding(pack, cvText);
+  if (phase === "5") {
+    console.log(`\n  collaboration: ${result.approved ? "approved" : "accepted"} after ${result.rounds} writer pass(es)`);
+  }
 
   const slug = `${mode}-${timestampSlug()}`;
   const jsonPath = await writeJsonArtifact(`pack-${slug}.json`, pack);
@@ -163,7 +116,7 @@ async function main(): Promise<void> {
   console.log(`  JSON:     ${jsonPath}`);
   console.log(`  Markdown: ${mdPath}`);
   printGroundingSummary(pack);
-  printPerfSummary(wallMs);
+  printPerfSummary(result.wallMs, result.perf);
   console.log("");
   console.log(markdown);
 }
@@ -185,11 +138,14 @@ function printGroundingSummary(pack: ApplicationPack): void {
 }
 
 /** Print a per-run performance breakdown: wall time + per-call-kind timings. */
-function printPerfSummary(wallMs: number): void {
-  const { rows, llmTotalMs, callCount } = getPerfSummary();
+function printPerfSummary(wallMs: number, perf: PerfSummary): void {
+  const { rows, llmTotalMs, callCount, inputTokens, outputTokens } = perf;
   console.log(`\n⏱  Performance`);
   console.log(`  wall time:  ${formatDuration(wallMs)}`);
   console.log(`  llm calls:  ${callCount} (${formatDuration(llmTotalMs)} in-model)`);
+  if (inputTokens > 0 || outputTokens > 0) {
+    console.log(`  tokens:     ${inputTokens} in / ${outputTokens} out (${inputTokens + outputTokens} total)`);
+  }
   for (const r of rows) {
     const count = r.count > 1 ? ` ×${r.count}` : "";
     console.log(`    - ${r.label}${count}: total ${formatDuration(r.totalMs)}, avg ${formatDuration(r.avgMs)}`);
@@ -198,6 +154,8 @@ function printPerfSummary(wallMs: number): void {
 
 main().catch((err: unknown) => {
   if (err instanceof FileReadError) {
+    console.error(`\n✗ ${err.message}`);
+  } else if (err instanceof OllamaUnavailableError) {
     console.error(`\n✗ ${err.message}`);
   } else if (err instanceof StructuredOutputError) {
     console.error(`\n✗ ${err.message}`);
