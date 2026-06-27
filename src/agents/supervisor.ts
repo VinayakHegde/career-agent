@@ -1,10 +1,13 @@
 import { callStructured } from "../llm/structured.js";
 import {
+  ApprovalSchema,
   SupervisorDecisionSchema,
+  type Approval,
   type SupervisorDecision,
   type Worker,
 } from "../schemas/supervisor.js";
-import type { Mode } from "../schemas/application.js";
+import type { Critique, Mode, Verification } from "../schemas/application.js";
+import { asContext } from "./shared.js";
 
 const SYSTEM = `You are the Supervisor of a team of specialist agents that build a
 career application pack. At each step you delegate to exactly one specialist, or
@@ -42,5 +45,25 @@ export async function decideNext(args: {
       `${args.critiqueNote}\n` +
       `Eligible next steps: ${options}.\n\n` +
       `Pick the single best next step from the eligible list.`,
+  });
+}
+
+const APPROVE_SYSTEM = `You are the Supervisor approving the final tailored CV
+bullets. Approve only if the critic raised no high/medium issues AND the evidence
+verifier found no unsupported claims. Otherwise, request a revision. Be strict:
+the bullets must be honest and fully grounded in the CV.`;
+
+/** Decide whether the current bullets are good enough or need another revision. */
+export async function approveFinal(args: {
+  critique: Critique;
+  verification: Verification;
+}): Promise<Approval> {
+  return callStructured({
+    schema: ApprovalSchema,
+    name: "approval",
+    system: APPROVE_SYSTEM,
+    human:
+      `Decide whether to approve the bullets or request a revision.\n\n` +
+      `${asContext("CRITIC", args.critique)}\n\n${asContext("VERIFICATION", args.verification)}`,
   });
 }
