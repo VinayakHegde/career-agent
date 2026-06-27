@@ -6,9 +6,11 @@ import type {
   CvTailoring,
   InterviewPrep,
   StrategyBrief,
+  Critique,
   Mode,
 } from "./application.js";
 import type { Task, Evaluation } from "./plan.js";
+import type { SupervisorChoice } from "./supervisor.js";
 
 /**
  * The shared state that flows through the LangGraph graph. Each node receives
@@ -77,3 +79,36 @@ export const PlanExecuteState = Annotation.Root({
 });
 
 export type PlanExecuteStateType = typeof PlanExecuteState.State;
+
+/**
+ * State for the Phase 4 supervisor-worker graph. The supervisor writes `next`;
+ * the routing edge sends control to that worker (or ends). Workers fill in
+ * their slice and route back to the supervisor.
+ */
+export const SupervisorState = Annotation.Root({
+  cvText: Annotation<string>(),
+  jobText: Annotation<string>(),
+  mode: Annotation<Mode>(),
+
+  jobAnalysis: Annotation<JobAnalysis | undefined>(),
+  matchAnalysis: Annotation<MatchAnalysis | undefined>(),
+  gapAnalysis: Annotation<GapAnalysis | undefined>(),
+  cvTailoring: Annotation<CvTailoring | undefined>(),
+  interviewPrep: Annotation<InterviewPrep | undefined>(),
+  strategyBrief: Annotation<StrategyBrief | undefined>(),
+
+  /** Critic's review of the writer's bullets. */
+  critique: Annotation<Critique | undefined>(),
+  /** Whether the critic has run (prevents re-reviewing in Phase 4). */
+  critiqueDone: Annotation<boolean>({ reducer: (_c, u) => u, default: () => false }),
+
+  /** The supervisor's chosen next step. */
+  next: Annotation<SupervisorChoice | undefined>(),
+
+  log: Annotation<string[]>({
+    reducer: (current, update) => current.concat(update),
+    default: () => [],
+  }),
+});
+
+export type SupervisorStateType = typeof SupervisorState.State;
