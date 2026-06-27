@@ -25,6 +25,7 @@ export async function reviewCvBullets(
   return callStructured({
     schema: CritiqueSchema,
     name: "critique",
+    role: "critique",
     system: SYSTEM,
     human:
       `Review these proposed CV bullets strictly for grounding and honesty.\n\n` +

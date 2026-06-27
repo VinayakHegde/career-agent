@@ -38,6 +38,7 @@ export async function decideNext(args: {
   return callStructured({
     schema: SupervisorDecisionSchema,
     name: "supervisor_decision",
+    role: "planning",
     system: SYSTEM,
     human:
       `Goal mode: "${args.mode}".\n` +
@@ -61,6 +62,7 @@ export async function approveFinal(args: {
   return callStructured({
     schema: ApprovalSchema,
     name: "approval",
+    role: "critique",
     system: APPROVE_SYSTEM,
     human:
       `Decide whether to approve the bullets or request a revision.\n\n` +

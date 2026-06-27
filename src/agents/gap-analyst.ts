@@ -22,6 +22,7 @@ export async function analyzeGaps(
   return callStructured({
     schema: GapAnalysisSchema,
     name: "gap_analysis",
+    role: "analysis",
     system: SYSTEM,
     human:
       `Identify the candidate's gaps and transferable strengths for this role.\n\n` +

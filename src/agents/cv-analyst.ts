@@ -30,6 +30,7 @@ export async function analyzeMatch(
   return callStructured({
     schema: MatchAnalysisSchema,
     name: "match_analysis",
+    role: "analysis",
     system: SYSTEM,
     human:
       `Assess how well the CV matches each job requirement.\n\n` +
@@ -45,6 +46,7 @@ export async function verifyBullets(
   return callStructured({
     schema: VerificationSchema,
     name: "verification",
+    role: "critique",
     system: VERIFY_SYSTEM,
     human:
       `Verify each proposed bullet strictly against the CV.\n\n` +

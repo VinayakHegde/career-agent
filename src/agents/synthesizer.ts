@@ -17,6 +17,7 @@ export async function buildStrategyBrief(pack: ApplicationPack): Promise<Strateg
   return callStructured({
     schema: StrategyBriefSchema,
     name: "strategy_brief",
+    role: "synthesis",
     system: SYSTEM,
     human:
       `Synthesize a final application strategy brief from these analyses.\n\n` +

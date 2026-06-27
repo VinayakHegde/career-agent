@@ -22,6 +22,7 @@ export async function prepInterview(
   return callStructured({
     schema: InterviewPrepSchema,
     name: "interview_prep",
+    role: "writing",
     system: SYSTEM,
     human:
       `Prepare interview questions and grounded answer angles for this candidate and role.\n\n` +

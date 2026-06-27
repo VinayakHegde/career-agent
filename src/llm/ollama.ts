@@ -10,6 +10,37 @@ export function resolveModel(): string {
   return process.env.OLLAMA_MODEL?.trim() || DEFAULT_MODEL;
 }
 
+/**
+ * Logical agent roles. Each structured call declares the role it plays so we can
+ * route cheap, mechanical work (routing/planning) to a small model and reserve a
+ * stronger model for generative or critical work (writing/critique/synthesis).
+ */
+export const AGENT_ROLES = [
+  "routing",
+  "planning",
+  "analysis",
+  "writing",
+  "critique",
+  "synthesis",
+] as const;
+export type AgentRole = (typeof AGENT_ROLES)[number];
+
+/**
+ * Resolve the model for a given role. Precedence:
+ *   1. OLLAMA_MODEL_<ROLE>   (e.g. OLLAMA_MODEL_WRITING=qwen3:14b)
+ *   2. OLLAMA_MODEL          (global override)
+ *   3. DEFAULT_MODEL
+ * Roles with no specific override transparently fall back to the global model,
+ * so the default single-model behaviour is unchanged.
+ */
+export function resolveModelForRole(role?: AgentRole): string {
+  if (role) {
+    const perRole = process.env[`OLLAMA_MODEL_${role.toUpperCase()}`]?.trim();
+    if (perRole) return perRole;
+  }
+  return resolveModel();
+}
+
 function resolveTemperature(): number {
   const raw = process.env.OLLAMA_TEMPERATURE;
   const parsed = raw ? Number(raw) : NaN;

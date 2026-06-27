@@ -21,6 +21,7 @@ export async function planTasks(mode: Mode): Promise<Plan> {
   return callStructured({
     schema: PlanSchema,
     name: "plan",
+    role: "planning",
     system: SYSTEM,
     human: `Goal mode: "${mode}". Produce the ordered task list to fulfill it.`,
   });

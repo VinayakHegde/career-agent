@@ -34,6 +34,7 @@ export async function suggestCvBullets(
   return callStructured({
     schema: CvTailoringSchema,
     name: "cv_tailoring",
+    role: "writing",
     system: SYSTEM,
     human:
       `Write tailored CV bullets that emphasize the candidate's real, relevant experience.\n\n` +
@@ -57,6 +58,7 @@ export async function reviseCvBullets(args: {
   return callStructured({
     schema: CvTailoringSchema,
     name: "cv_tailoring_revision",
+    role: "writing",
     system: REVISE_SYSTEM,
     human:
       `Revise the previous bullets to resolve the feedback below.\n\n` +

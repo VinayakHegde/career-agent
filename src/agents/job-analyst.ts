@@ -12,6 +12,7 @@ export async function analyzeJob(jobText: string): Promise<JobAnalysis> {
   return callStructured({
     schema: JobAnalysisSchema,
     name: "job_analysis",
+    role: "analysis",
     system: SYSTEM,
     human: `Analyze this job description and produce the structured breakdown.\n\n${jobBlock(jobText)}`,
   });

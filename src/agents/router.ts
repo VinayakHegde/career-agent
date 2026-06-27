@@ -20,6 +20,7 @@ export async function classifyIntent(request: string): Promise<Mode> {
   const result = await callStructured({
     schema: IntentSchema,
     name: "route_intent",
+    role: "routing",
     system: SYSTEM,
     human: `Classify this request:\n"""\n${request}\n"""`,
   });

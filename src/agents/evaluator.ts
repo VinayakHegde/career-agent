@@ -23,6 +23,7 @@ export async function evaluatePack(
   return callStructured({
     schema: EvaluationSchema,
     name: "evaluation",
+    role: "critique",
     system: SYSTEM,
     human:
       `Goal mode: "${mode}". Expected sections: ${expectedSections.join(", ")}.\n\n` +
