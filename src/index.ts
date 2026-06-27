@@ -6,6 +6,7 @@ import { resolveModel } from "./llm/ollama.js";
 import { StructuredOutputError } from "./llm/structured.js";
 import { runPhase1 } from "./graphs/phase1-single-agent.js";
 import { runPhase2 } from "./graphs/phase2-router.js";
+import { runPhase3 } from "./graphs/phase3-plan-execute.js";
 import { renderPackMarkdown } from "./render/pack-markdown.js";
 
 const HELP = `
@@ -19,7 +20,7 @@ Options:
   --job      Path to a job description Markdown file   (required)
   --mode     One of: ${MODES.join(", ")}
   --request  Free-text request; the Phase 2 router infers the mode from it
-  --phase    Orchestration version: 1 (sequential) or 2 (LangGraph)  (default: 2)
+  --phase    Orchestration version: 1 (sequential), 2 (router), 3 (plan-execute)  (default: 2)
   --model    Override OLLAMA_MODEL for this run
   --help     Show this help
 
@@ -65,8 +66,8 @@ async function main(): Promise<void> {
   const explicitMode = values.mode as Mode | undefined;
 
   const phase = values.phase ?? "2";
-  if (phase !== "1" && phase !== "2") {
-    console.error(`Error: invalid --phase "${phase}". Use 1 or 2.`);
+  if (phase !== "1" && phase !== "2" && phase !== "3") {
+    console.error(`Error: invalid --phase "${phase}". Use 1, 2, or 3.`);
     process.exitCode = 1;
     return;
   }
@@ -97,6 +98,19 @@ async function main(): Promise<void> {
       mode,
       onStep: (label) => console.log(`  • ${label}…`),
     });
+  } else if (phase === "3") {
+    mode = explicitMode ?? "full";
+    const result = await runPhase3({
+      cvText,
+      jobText,
+      mode,
+      onStep: (label) => console.log(`  • ${label}`),
+    });
+    pack = result.pack;
+    if (result.evaluation) {
+      console.log(`\n  evaluator: ${result.evaluation.complete ? "complete" : "accepted with notes"}`);
+      console.log(`  ${result.evaluation.summary}`);
+    }
   } else {
     const result = await runPhase2({
       cvText,
