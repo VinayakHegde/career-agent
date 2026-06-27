@@ -82,6 +82,23 @@ export function renderPackMarkdown(pack: ApplicationPack, meta: { mode: string; 
     lines.push("");
   }
 
+  if (pack.critique) {
+    const c = pack.critique;
+    lines.push(`## Critic Review`);
+    lines.push("");
+    lines.push(`**Verdict:** ${c.approved ? "approved" : "changes suggested"}`);
+    lines.push("");
+    lines.push(c.summary);
+    if (c.findings.length) {
+      lines.push("");
+      for (const f of c.findings) {
+        lines.push(`- **[${f.issue} · ${f.severity}]** ${f.target}`);
+        lines.push(`  - Fix: ${f.suggestedFix}`);
+      }
+    }
+    lines.push("");
+  }
+
   if (pack.strategyBrief) {
     const s = pack.strategyBrief;
     lines.push(`## 6. Final Application Strategy Brief`);
