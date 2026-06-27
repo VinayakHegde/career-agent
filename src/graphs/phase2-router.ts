@@ -8,6 +8,7 @@ import { suggestCvBullets } from "../agents/writer.js";
 import { prepInterview } from "../agents/interview-coach.js";
 import { buildStrategyBrief } from "../agents/synthesizer.js";
 import { classifyIntent } from "../agents/router.js";
+import { packFromState } from "./pack.js";
 
 /* ------------------------------- Nodes ----------------------------------- */
 // Each node receives the current state and returns a partial update.
@@ -78,17 +79,6 @@ export function buildPhase2Graph() {
     .addConditionalEdges("interview", afterInterview, ["synth", END])
     .addEdge("synth", END)
     .compile();
-}
-
-function packFromState(state: Partial<GraphStateType>): ApplicationPack {
-  return {
-    jobAnalysis: state.jobAnalysis,
-    matchAnalysis: state.matchAnalysis,
-    gapAnalysis: state.gapAnalysis,
-    cvTailoring: state.cvTailoring,
-    interviewPrep: state.interviewPrep,
-    strategyBrief: state.strategyBrief,
-  };
 }
 
 export interface Phase2Input {
