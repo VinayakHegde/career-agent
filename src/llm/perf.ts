@@ -11,7 +11,13 @@ interface Timing {
   ms: number;
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 const timings: Timing[] = [];
+const usages: Array<{ label: string } & TokenUsage> = [];
 const perfEnabled = process.env.PERF === "1" || process.env.PERF === "true";
 
 export function isPerfEnabled(): boolean {
@@ -22,6 +28,15 @@ export function recordTiming(label: string, ms: number): void {
   timings.push({ label, ms });
   if (perfEnabled) {
     console.error(`  ⏱  ${label}: ${formatDuration(ms)}`);
+  }
+}
+
+/** Record token usage for a call (Ollama reports prompt/eval token counts). */
+export function recordUsage(label: string, usage: TokenUsage): void {
+  if (usage.inputTokens === 0 && usage.outputTokens === 0) return;
+  usages.push({ label, ...usage });
+  if (perfEnabled) {
+    console.error(`  🪙 ${label}: ${usage.inputTokens} in / ${usage.outputTokens} out`);
   }
 }
 
@@ -37,6 +52,7 @@ export async function timed<T>(label: string, fn: () => Promise<T>): Promise<T> 
 
 export function resetTimings(): void {
   timings.length = 0;
+  usages.length = 0;
 }
 
 export interface PerfRow {
@@ -51,6 +67,10 @@ export interface PerfSummary {
   /** Total time spent inside model calls (sum of all timings). */
   llmTotalMs: number;
   callCount: number;
+  /** Total prompt (input) tokens across all calls that reported usage. */
+  inputTokens: number;
+  /** Total completion (output) tokens across all calls that reported usage. */
+  outputTokens: number;
 }
 
 export function getPerfSummary(): PerfSummary {
@@ -65,7 +85,9 @@ export function getPerfSummary(): PerfSummary {
     .map(([label, v]) => ({ label, count: v.count, totalMs: v.totalMs, avgMs: v.totalMs / v.count }))
     .sort((a, b) => b.totalMs - a.totalMs);
   const llmTotalMs = timings.reduce((sum, t) => sum + t.ms, 0);
-  return { rows, llmTotalMs, callCount: timings.length };
+  const inputTokens = usages.reduce((sum, u) => sum + u.inputTokens, 0);
+  const outputTokens = usages.reduce((sum, u) => sum + u.outputTokens, 0);
+  return { rows, llmTotalMs, callCount: timings.length, inputTokens, outputTokens };
 }
 
 export function formatDuration(ms: number): string {

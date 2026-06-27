@@ -1,7 +1,8 @@
 import type { z } from "zod";
+import type { AIMessage } from "@langchain/core/messages";
 import type { ChatOllamaInput } from "@langchain/ollama";
 import { getChatModel, resolveModelForRole, type AgentRole } from "./ollama.js";
-import { timed } from "./perf.js";
+import { timed, recordUsage } from "./perf.js";
 
 export class StructuredOutputError extends Error {
   constructor(
@@ -46,7 +47,9 @@ export async function callStructured<S extends z.ZodTypeAny>(
   const { schema, name, system, human, role, modelOverrides, retries = 1 } = opts;
   // A per-call `model` override always wins; otherwise resolve from the role.
   const model = getChatModel({ model: resolveModelForRole(role), ...modelOverrides });
-  const structured = model.withStructuredOutput(schema, { name });
+  // includeRaw keeps the underlying AIMessage so we can read token usage; the
+  // parsed object is still validated against the schema.
+  const structured = model.withStructuredOutput(schema, { name, includeRaw: true });
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -56,12 +59,14 @@ export async function callStructured<S extends z.ZodTypeAny>(
         : "\n\nIMPORTANT: Your previous reply could not be parsed. " +
           "Return ONLY a single JSON object that matches the required schema exactly.";
     try {
-      return (await timed(name, () =>
+      const { raw, parsed } = await timed(name, () =>
         structured.invoke([
           ["system", system],
           ["human", human + reminder],
         ]),
-      )) as z.infer<S>;
+      );
+      recordModelUsage(name, raw as AIMessage);
+      return parsed as z.infer<S>;
     } catch (err) {
       lastError = err;
     }
@@ -71,4 +76,14 @@ export async function callStructured<S extends z.ZodTypeAny>(
     `Model "${model.model}" failed to produce valid output for "${name}" after ${retries + 1} attempt(s).`,
     lastError,
   );
+}
+
+/** Pull token usage off a raw AIMessage (if the provider reported any) and record it. */
+function recordModelUsage(label: string, raw: AIMessage | undefined): void {
+  const usage = raw?.usage_metadata;
+  if (!usage) return;
+  recordUsage(label, {
+    inputTokens: usage.input_tokens ?? 0,
+    outputTokens: usage.output_tokens ?? 0,
+  });
 }
