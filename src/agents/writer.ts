@@ -7,7 +7,26 @@ import {
   type MatchAnalysis,
   type Verification,
 } from "../schemas/application.js";
+import { normalizeText } from "../grounding/verify.js";
 import { GROUNDING_RULES, asContext, cvBlock } from "./shared.js";
+
+/**
+ * Drop near-duplicate bullets. Local 8B models tend to restate the same CV line
+ * against several requirements; we key on the normalized suggestion text and
+ * keep the first occurrence (which also preserves the model's ordering).
+ */
+export function dedupeBullets(tailoring: CvTailoring): CvTailoring {
+  const seen = new Set<string>();
+  const bullets = tailoring.bullets.filter((b) => {
+    const key = normalizeText(b.suggestion);
+    if (key.length === 0 || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  // Never return an empty list (the schema requires >= 1 bullet); fall back to
+  // the original if dedup somehow removed everything.
+  return { bullets: bullets.length > 0 ? bullets : tailoring.bullets };
+}
 
 const SYSTEM = `${GROUNDING_RULES}
 
@@ -31,7 +50,7 @@ export async function suggestCvBullets(
   job: JobAnalysis,
   match: MatchAnalysis,
 ): Promise<CvTailoring> {
-  return callStructured({
+  const result = await callStructured({
     schema: CvTailoringSchema,
     name: "cv_tailoring",
     role: "writing",
@@ -41,6 +60,7 @@ export async function suggestCvBullets(
       `${cvBlock(cvText)}\n\n${asContext("JOB_REQUIREMENTS", job)}\n\n` +
       `${asContext("MATCH_ANALYSIS", match)}`,
   });
+  return dedupeBullets(result);
 }
 
 /** Revise prior bullets to address critic findings and verification verdicts. */
@@ -51,11 +71,20 @@ export async function reviseCvBullets(args: {
   previous: CvTailoring;
   critique: Critique;
   verification?: Verification;
+  /** Bullet suggestions whose cited evidence was not found in the CV (deterministic). */
+  ungroundedClaims?: string[];
 }): Promise<CvTailoring> {
   const verificationBlock = args.verification
     ? `\n\n${asContext("EVIDENCE_VERIFICATION", args.verification)}`
     : "";
-  return callStructured({
+  // A deterministic list of bullets whose evidence was NOT found in the CV. This
+  // is the hard, model-free signal the reviser must act on (remove or re-ground).
+  const ungroundedBlock = args.ungroundedClaims?.length
+    ? `\n\nThe following bullets cite evidence that is NOT present in the CV and MUST be ` +
+      `removed or re-grounded with an exact CV quote:\n` +
+      args.ungroundedClaims.map((c) => `- ${c}`).join("\n")
+    : "";
+  const result = await callStructured({
     schema: CvTailoringSchema,
     name: "cv_tailoring_revision",
     role: "writing",
@@ -63,6 +92,7 @@ export async function reviseCvBullets(args: {
     human:
       `Revise the previous bullets to resolve the feedback below.\n\n` +
       `${cvBlock(args.cvText)}\n\n${asContext("PREVIOUS_BULLETS", args.previous)}\n\n` +
-      `${asContext("CRITIC_FINDINGS", args.critique)}${verificationBlock}`,
+      `${asContext("CRITIC_FINDINGS", args.critique)}${verificationBlock}${ungroundedBlock}`,
   });
+  return dedupeBullets(result);
 }

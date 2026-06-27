@@ -6,6 +6,7 @@ import { analyzeMatch, verifyBullets } from "../agents/cv-analyst.js";
 import { suggestCvBullets, reviseCvBullets } from "../agents/writer.js";
 import { reviewCvBullets } from "../agents/critic.js";
 import { approveFinal } from "../agents/supervisor.js";
+import { verifyTailoringGrounding, ungroundedClaims } from "../grounding/verify.js";
 
 /** 1 initial draft + up to 2 revisions before the supervisor must accept. */
 const MAX_WRITES = 3;
@@ -32,6 +33,9 @@ async function writeNode(state: CollaborationStateType): Promise<Partial<Collabo
         previous: state.cvTailoring!,
         critique: state.critique!,
         verification: state.verification,
+        // Hand the writer the deterministic list of bullets that weren't found
+        // in the CV, so the revision provably fixes the grounding failures.
+        ungroundedClaims: state.grounding ? ungroundedClaims(state.grounding) : undefined,
       })
     : await suggestCvBullets(state.cvText, state.jobAnalysis!, state.matchAnalysis!);
   return { cvTailoring, round, log: [isRevision ? `writer: revised (round ${round})` : "writer: drafted (round 1)"] };
@@ -43,14 +47,37 @@ async function criticNode(state: CollaborationStateType): Promise<Partial<Collab
 }
 
 async function verifyNode(state: CollaborationStateType): Promise<Partial<CollaborationStateType>> {
+  // Two independent signals: the LLM verifier (nuanced) and the deterministic
+  // grounding check (model-free, authoritative for "is this quote in the CV?").
   const verification = await verifyBullets(state.cvText, state.cvTailoring!);
-  return { verification, log: [`verifier: ${verification.allSupported ? "all supported" : "unsupported claims found"}`] };
+  const grounding = verifyTailoringGrounding(state.cvTailoring!, state.cvText);
+  return {
+    verification,
+    grounding,
+    log: [
+      `verifier: ${verification.allSupported ? "all supported" : "unsupported claims found"}; ` +
+        `grounding: ${grounding.totals.ungrounded} ungrounded`,
+    ],
+  };
 }
 
 async function reviewNode(state: CollaborationStateType): Promise<Partial<CollaborationStateType>> {
+  const ungrounded = state.grounding?.totals.ungrounded ?? 0;
+
   if (state.round >= MAX_WRITES) {
-    return { approved: true, log: ["supervisor: approved (revision budget reached)"] };
+    const note = ungrounded > 0 ? ` (warning: ${ungrounded} still ungrounded)` : "";
+    return { approved: true, log: [`supervisor: approved (revision budget reached)${note}`] };
   }
+
+  // Deterministic hard gate: never approve while any bullet cites evidence that
+  // isn't in the CV, regardless of what the LLM critic/verifier concluded.
+  if (ungrounded > 0) {
+    return {
+      approved: false,
+      log: [`supervisor: revise (${ungrounded} ungrounded bullet(s) — deterministic gate)`],
+    };
+  }
+
   const approval = await approveFinal({ critique: state.critique!, verification: state.verification! });
   return {
     approved: approval.decision === "approve",

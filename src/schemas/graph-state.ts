@@ -8,6 +8,7 @@ import type {
   StrategyBrief,
   Critique,
   Verification,
+  GroundingReport,
   Mode,
 } from "./application.js";
 import type { Task, Evaluation } from "./plan.js";
@@ -132,6 +133,8 @@ export const CollaborationState = Annotation.Root({
   /** Latest critic and verifier feedback on the current draft. */
   critique: Annotation<Critique | undefined>(),
   verification: Annotation<Verification | undefined>(),
+  /** Deterministic grounding of the current draft (model-free hard gate). */
+  grounding: Annotation<GroundingReport | undefined>(),
 
   /** Number of writer passes so far (1 draft + N revisions). */
   round: Annotation<number>({ reducer: (_c, u) => u, default: () => 0 }),

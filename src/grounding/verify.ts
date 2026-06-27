@@ -1,6 +1,7 @@
 import {
   NO_EVIDENCE,
   type ApplicationPack,
+  type CvTailoring,
   type GroundingCheck,
   type GroundingReport,
   type GroundingStatus,
@@ -137,4 +138,14 @@ export function verifyGrounding(pack: ApplicationPack, cvText: string): Groundin
   const honestyScore = totals.total === 0 ? 1 : (totals.total - totals.ungrounded) / totals.total;
 
   return { groundingScore, honestyScore, totals, checks };
+}
+
+/** Deterministically ground just a set of tailored bullets against the CV. */
+export function verifyTailoringGrounding(tailoring: CvTailoring, cvText: string): GroundingReport {
+  return verifyGrounding({ cvTailoring: tailoring }, cvText);
+}
+
+/** The claim text of every check the verifier flagged as ungrounded (likely invented). */
+export function ungroundedClaims(report: GroundingReport): string[] {
+  return report.checks.filter((c) => c.status === "ungrounded").map((c) => c.claim);
 }

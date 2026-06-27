@@ -7,6 +7,8 @@ import {
   classifyEvidence,
   collectEvidenceClaims,
   verifyGrounding,
+  verifyTailoringGrounding,
+  ungroundedClaims,
 } from "./verify.js";
 
 const CV = `Designed and built a billing microservice in Node.js handling 2M invoice events.
@@ -111,4 +113,18 @@ test("verifyGrounding is vacuously perfect when there are no claims", () => {
   assert.equal(report.totals.total, 0);
   assert.equal(report.groundingScore, 1);
   assert.equal(report.honestyScore, 1);
+});
+
+test("verifyTailoringGrounding + ungroundedClaims surface fabricated bullets", () => {
+  const report = verifyTailoringGrounding(
+    {
+      bullets: [
+        { targetRequirement: "a", suggestion: "real work", evidence: "billing microservice", grounded: true },
+        { targetRequirement: "b", suggestion: "invented", evidence: "led a 500-person org", grounded: false },
+      ],
+    },
+    CV,
+  );
+  assert.equal(report.totals.ungrounded, 1);
+  assert.deepEqual(ungroundedClaims(report), ["invented"]);
 });
