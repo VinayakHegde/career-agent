@@ -99,6 +99,23 @@ export function renderPackMarkdown(pack: ApplicationPack, meta: { mode: string; 
     lines.push("");
   }
 
+  if (pack.verification) {
+    const v = pack.verification;
+    lines.push(`## Evidence Verification`);
+    lines.push("");
+    lines.push(`**All claims supported:** ${v.allSupported ? "yes" : "no"}`);
+    lines.push("");
+    for (const item of v.items) {
+      lines.push(`- **${item.verdict}** — ${item.claim}`);
+      lines.push(`  - Evidence: ${evidenceLabel(item.evidence)}`);
+    }
+    if (v.notes.trim()) {
+      lines.push("");
+      lines.push(v.notes);
+    }
+    lines.push("");
+  }
+
   if (pack.strategyBrief) {
     const s = pack.strategyBrief;
     lines.push(`## 6. Final Application Strategy Brief`);
